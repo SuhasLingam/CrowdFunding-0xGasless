@@ -1,101 +1,177 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect } from 'react';
+import { BrowserProvider, Contract, formatEther, parseEther } from 'ethers';
+import WalletConnect from '../components/WalletConnect';
+import CreateCampaign from '../components/CreateCampaign';
+import { CROWDFUNDING_ABI } from '@/constants/abi';
+import { CROWDFUNDING_ADDRESS } from '@/constants/addresses';
+
+interface Campaign {
+  id: number;
+  title: string;
+  description: string;
+  goal: string;
+  raised: string;
+  creator: string;
+  deadline: Date;
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [provider, setProvider] = useState<BrowserProvider | null>(null);
+  const [userAddress, setUserAddress] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleWalletConnect = (address: string, provider: BrowserProvider) => {
+    setUserAddress(address);
+    setProvider(provider);
+  };
+
+  const loadCampaigns = async () => {
+    if (!provider) return;
+
+    try {
+      const contract = new Contract(
+        CROWDFUNDING_ADDRESS,
+        CROWDFUNDING_ABI,
+        provider
+      );
+
+      const campaignCount = await contract.campaignCount();
+      const loadedCampaigns: Campaign[] = [];
+
+      for (let i = 0; i < campaignCount; i++) {
+        const campaign = await contract.campaigns(i);
+        loadedCampaigns.push({
+          id: i,
+          title: campaign.title,
+          description: campaign.description,
+          goal: formatEther(campaign.goal),
+          raised: formatEther(campaign.amountRaised),
+          creator: campaign.creator,
+          deadline: new Date(Number(campaign.deadline.toString()) * 1000)
+        });
+      }
+
+      setCampaigns(loadedCampaigns);
+    } catch (error) {
+      console.error('Error loading campaigns:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateCampaign = async (campaignData: any) => {
+    if (!provider) return;
+
+    const signer = await provider.getSigner();
+    const contract = new Contract(
+      CROWDFUNDING_ADDRESS,
+      CROWDFUNDING_ABI,
+      signer
+    );
+
+    const tx = await contract.createCampaign(
+      campaignData.title,
+      campaignData.description,
+      campaignData.goal,
+      campaignData.deadline
+    );
+
+    await tx.wait();
+    await loadCampaigns();
+  };
+
+  const handleContribute = async (campaignId: number, amount: string) => {
+    if (!provider) return;
+
+    const signer = await provider.getSigner();
+    const contract = new Contract(
+      CROWDFUNDING_ADDRESS,
+      CROWDFUNDING_ABI,
+      signer
+    );
+
+    const tx = await contract.contribute(campaignId, {
+      value: parseEther(amount)
+    });
+
+    await tx.wait();
+    await loadCampaigns();
+  };
+
+  useEffect(() => {
+    if (provider) {
+      loadCampaigns();
+    }
+  }, [provider]);
+
+  return (
+    <main className="min-h-screen p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-12">
+          <div>
+            <h1 className="text-4xl font-bold">Decentralized Crowdfunding</h1>
+            <p className="text-xl text-gray-600 mt-2">Support projects you believe in</p>
+          </div>
+          <WalletConnect onConnect={handleWalletConnect} />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        {userAddress && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="mb-8 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+          >
+            Create Campaign
+          </button>
+        )}
+
+        {loading ? (
+          <div className="text-center py-12">Loading campaigns...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {campaigns.map((campaign) => (
+              <div key={campaign.id} className="border rounded-lg p-6 shadow-md">
+                <h2 className="text-xl font-semibold mb-2">{campaign.title}</h2>
+                <p className="text-gray-600 mb-4">{campaign.description}</p>
+                
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full"
+                    style={{ 
+                      width: `${(parseFloat(campaign.raised) / parseFloat(campaign.goal) * 100)}%` 
+                    }}
+                  ></div>
+                </div>
+                
+                <div className="flex justify-between text-sm text-gray-600 mb-4">
+                  <span>{campaign.raised} ETH raised</span>
+                  <span>Goal: {campaign.goal} ETH</span>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-500">
+                    by {campaign.creator.slice(0, 6)}...{campaign.creator.slice(-4)}
+                  </span>
+                  <button className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Contribute
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showCreateModal && (
+          <CreateCampaign
+            onClose={() => setShowCreateModal(false)}
+            onSubmit={handleCreateCampaign}
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        )}
+      </div>
+    </main>
   );
 }
